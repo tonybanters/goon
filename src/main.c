@@ -28,8 +28,12 @@ static int cmd_eval(const char *path, bool pretty) {
     }
 
     if (!goon_load_file(ctx, path)) {
-        const char *err = goon_get_error(ctx);
-        fprintf(stderr, "error: %s\n", err ? err : "unknown error");
+        const Goon_Error *err = goon_get_error_info(ctx);
+        if (err) {
+            goon_error_print(err);
+        } else {
+            fprintf(stderr, "error: unknown error\n");
+        }
         goon_destroy(ctx);
         return 1;
     }
@@ -53,8 +57,12 @@ static int cmd_check(const char *path) {
     }
 
     if (!goon_load_file(ctx, path)) {
-        const char *err = goon_get_error(ctx);
-        fprintf(stderr, "error: %s\n", err ? err : "unknown error");
+        const Goon_Error *err = goon_get_error_info(ctx);
+        if (err) {
+            goon_error_print(err);
+        } else {
+            fprintf(stderr, "error: unknown error\n");
+        }
         goon_destroy(ctx);
         return 1;
     }

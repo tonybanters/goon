@@ -20,7 +20,9 @@ typedef enum {
     TOK_COLON,
     TOK_QUESTION,
     TOK_SPREAD,
+    TOK_DOTDOT,
     TOK_DOT,
+    TOK_ARROW,
     TOK_INT,
     TOK_STRING,
     TOK_IDENT,
@@ -45,37 +47,113 @@ typedef struct {
     const char *src;
     size_t pos;
     size_t len;
+    size_t line;
+    size_t col;
+    size_t line_start;
+    size_t token_start;
     Token current;
     char *error;
+    size_t error_line;
+    size_t error_col;
 } Lexer;
 
 static void lexer_init(Lexer *lex, const char *src) {
     lex->src = src;
     lex->pos = 0;
     lex->len = strlen(src);
+    lex->line = 1;
+    lex->col = 1;
+    lex->line_start = 0;
+    lex->token_start = 0;
     lex->current.type = TOK_EOF;
     lex->current.data.string = NULL;
     lex->error = NULL;
+    lex->error_line = 0;
+    lex->error_col = 0;
+}
+
+static void lexer_set_error(Lexer *lex, const char *msg) {
+    if (lex->error) free(lex->error);
+    lex->error = strdup(msg);
+    lex->error_line = lex->line;
+    lex->error_col = lex->col;
+}
+
+typedef struct {
+    size_t pos;
+    size_t line;
+    size_t col;
+    size_t line_start;
+    size_t token_start;
+    Token current;
+} Lexer_State;
+
+static void lexer_save(Lexer *lex, Lexer_State *state) {
+    state->pos = lex->pos;
+    state->line = lex->line;
+    state->col = lex->col;
+    state->line_start = lex->line_start;
+    state->token_start = lex->token_start;
+    state->current = lex->current;
+    if (lex->current.type == TOK_STRING || lex->current.type == TOK_IDENT) {
+        state->current.data.string = strdup(lex->current.data.string);
+    }
+}
+
+static void lexer_restore(Lexer *lex, Lexer_State *state) {
+    if (lex->current.type == TOK_STRING || lex->current.type == TOK_IDENT) {
+        free(lex->current.data.string);
+    }
+    lex->pos = state->pos;
+    lex->line = state->line;
+    lex->col = state->col;
+    lex->line_start = state->line_start;
+    lex->token_start = state->token_start;
+    lex->current = state->current;
+}
+
+static void lexer_state_free(Lexer_State *state) {
+    if (state->current.type == TOK_STRING || state->current.type == TOK_IDENT) {
+        free(state->current.data.string);
+        state->current.data.string = NULL;
+    }
+}
+
+static void lexer_advance(Lexer *lex) {
+    if (lex->pos < lex->len) {
+        if (lex->src[lex->pos] == '\n') {
+            lex->line++;
+            lex->col = 1;
+            lex->pos++;
+            lex->line_start = lex->pos;
+        } else {
+            lex->col++;
+            lex->pos++;
+        }
+    }
 }
 
 static void lexer_skip_whitespace(Lexer *lex) {
     while (lex->pos < lex->len) {
         char c = lex->src[lex->pos];
         if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
-            lex->pos++;
+            lexer_advance(lex);
         } else if (c == '/' && lex->pos + 1 < lex->len && lex->src[lex->pos + 1] == '/') {
-            lex->pos += 2;
+            lexer_advance(lex);
+            lexer_advance(lex);
             while (lex->pos < lex->len && lex->src[lex->pos] != '\n') {
-                lex->pos++;
+                lexer_advance(lex);
             }
         } else if (c == '/' && lex->pos + 1 < lex->len && lex->src[lex->pos + 1] == '*') {
-            lex->pos += 2;
+            lexer_advance(lex);
+            lexer_advance(lex);
             while (lex->pos + 1 < lex->len) {
                 if (lex->src[lex->pos] == '*' && lex->src[lex->pos + 1] == '/') {
-                    lex->pos += 2;
+                    lexer_advance(lex);
+                    lexer_advance(lex);
                     break;
                 }
-                lex->pos++;
+                lexer_advance(lex);
             }
         } else {
             break;
@@ -106,6 +184,7 @@ static bool lexer_next(Lexer *lex) {
     }
 
     lexer_skip_whitespace(lex);
+    lex->token_start = lex->pos;
 
     if (lex->pos >= lex->len) {
         lex->current.type = TOK_EOF;
@@ -114,33 +193,48 @@ static bool lexer_next(Lexer *lex) {
 
     char c = lex->src[lex->pos];
 
-    if (c == '{') { lex->current.type = TOK_LBRACE; lex->pos++; return true; }
-    if (c == '}') { lex->current.type = TOK_RBRACE; lex->pos++; return true; }
-    if (c == '[') { lex->current.type = TOK_LBRACKET; lex->pos++; return true; }
-    if (c == ']') { lex->current.type = TOK_RBRACKET; lex->pos++; return true; }
-    if (c == '(') { lex->current.type = TOK_LPAREN; lex->pos++; return true; }
-    if (c == ')') { lex->current.type = TOK_RPAREN; lex->pos++; return true; }
-    if (c == ';') { lex->current.type = TOK_SEMICOLON; lex->pos++; return true; }
-    if (c == ',') { lex->current.type = TOK_COMMA; lex->pos++; return true; }
-    if (c == '=') { lex->current.type = TOK_EQUALS; lex->pos++; return true; }
-    if (c == ':') { lex->current.type = TOK_COLON; lex->pos++; return true; }
-    if (c == '?') { lex->current.type = TOK_QUESTION; lex->pos++; return true; }
+    if (c == '{') { lex->current.type = TOK_LBRACE; lexer_advance(lex); return true; }
+    if (c == '}') { lex->current.type = TOK_RBRACE; lexer_advance(lex); return true; }
+    if (c == '[') { lex->current.type = TOK_LBRACKET; lexer_advance(lex); return true; }
+    if (c == ']') { lex->current.type = TOK_RBRACKET; lexer_advance(lex); return true; }
+    if (c == '(') { lex->current.type = TOK_LPAREN; lexer_advance(lex); return true; }
+    if (c == ')') { lex->current.type = TOK_RPAREN; lexer_advance(lex); return true; }
+    if (c == ';') { lex->current.type = TOK_SEMICOLON; lexer_advance(lex); return true; }
+    if (c == ',') { lex->current.type = TOK_COMMA; lexer_advance(lex); return true; }
+    if (c == '=' && lex->pos + 1 < lex->len && lex->src[lex->pos + 1] == '>') {
+        lex->current.type = TOK_ARROW;
+        lexer_advance(lex);
+        lexer_advance(lex);
+        return true;
+    }
+    if (c == '=') { lex->current.type = TOK_EQUALS; lexer_advance(lex); return true; }
+    if (c == ':') { lex->current.type = TOK_COLON; lexer_advance(lex); return true; }
+    if (c == '?') { lex->current.type = TOK_QUESTION; lexer_advance(lex); return true; }
 
     if (c == '.' && lex->pos + 2 < lex->len &&
         lex->src[lex->pos + 1] == '.' && lex->src[lex->pos + 2] == '.') {
         lex->current.type = TOK_SPREAD;
-        lex->pos += 3;
+        lexer_advance(lex);
+        lexer_advance(lex);
+        lexer_advance(lex);
+        return true;
+    }
+
+    if (c == '.' && lex->pos + 1 < lex->len && lex->src[lex->pos + 1] == '.') {
+        lex->current.type = TOK_DOTDOT;
+        lexer_advance(lex);
+        lexer_advance(lex);
         return true;
     }
 
     if (c == '.') {
         lex->current.type = TOK_DOT;
-        lex->pos++;
+        lexer_advance(lex);
         return true;
     }
 
     if (c == '"') {
-        lex->pos++;
+        lexer_advance(lex);
         size_t buf_size = 256;
         size_t buf_len = 0;
         char *buf = malloc(buf_size);
@@ -149,7 +243,7 @@ static bool lexer_next(Lexer *lex) {
         while (lex->pos < lex->len && lex->src[lex->pos] != '"') {
             char ch = lex->src[lex->pos];
             if (ch == '\\' && lex->pos + 1 < lex->len) {
-                lex->pos++;
+                lexer_advance(lex);
                 ch = lex->src[lex->pos];
                 switch (ch) {
                     case 'n': ch = '\n'; break;
@@ -167,16 +261,16 @@ static bool lexer_next(Lexer *lex) {
                 if (!buf) return false;
             }
             buf[buf_len++] = ch;
-            lex->pos++;
+            lexer_advance(lex);
         }
 
         if (lex->pos >= lex->len) {
             free(buf);
-            lex->error = strdup("unterminated string");
+            lexer_set_error(lex, "unterminated string");
             return false;
         }
 
-        lex->pos++;
+        lexer_advance(lex);
         buf[buf_len] = '\0';
         lex->current.type = TOK_STRING;
         lex->current.data.string = buf;
@@ -187,12 +281,12 @@ static bool lexer_next(Lexer *lex) {
         int sign = 1;
         if (c == '-') {
             sign = -1;
-            lex->pos++;
+            lexer_advance(lex);
         }
         int64_t val = 0;
         while (lex->pos < lex->len && isdigit(lex->src[lex->pos])) {
             val = val * 10 + (lex->src[lex->pos] - '0');
-            lex->pos++;
+            lexer_advance(lex);
         }
         lex->current.type = TOK_INT;
         lex->current.data.integer = val * sign;
@@ -202,7 +296,7 @@ static bool lexer_next(Lexer *lex) {
     if (is_ident_start(c)) {
         size_t start = lex->pos;
         while (lex->pos < lex->len && is_ident_char(lex->src[lex->pos])) {
-            lex->pos++;
+            lexer_advance(lex);
         }
         char *ident = strdup_range(lex->src + start, lex->pos - start);
 
@@ -247,7 +341,7 @@ static bool lexer_next(Lexer *lex) {
         return true;
     }
 
-    lex->error = strdup("unexpected character");
+    lexer_set_error(lex, "unexpected character");
     return false;
 }
 
@@ -316,6 +410,21 @@ Goon_Value *goon_record(Goon_Ctx *ctx) {
     if (!val) return NULL;
     val->type = GOON_RECORD;
     val->data.record.fields = NULL;
+    return val;
+}
+
+static Goon_Value *goon_lambda(Goon_Ctx *ctx, char **params, size_t param_count, const char *body, Goon_Binding *env) {
+    Goon_Value *val = alloc_value(ctx);
+    if (!val) return NULL;
+    val->type = GOON_LAMBDA;
+    val->data.lambda.params = malloc(param_count * sizeof(char *));
+    if (!val->data.lambda.params && param_count > 0) return NULL;
+    for (size_t i = 0; i < param_count; i++) {
+        val->data.lambda.params[i] = strdup(params[i]);
+    }
+    val->data.lambda.param_count = param_count;
+    val->data.lambda.body = strdup(body);
+    val->data.lambda.env = env;
     return val;
 }
 
@@ -456,6 +565,62 @@ typedef struct {
 
 static Goon_Value *parse_expr(Parser *p);
 
+static Goon_Value *call_lambda(Goon_Ctx *ctx, Goon_Value *fn, Goon_Value **args, size_t argc) {
+    if (!fn || fn->type != GOON_LAMBDA) return goon_nil(ctx);
+    if (argc != fn->data.lambda.param_count) return goon_nil(ctx);
+
+    Goon_Binding *old_env = ctx->env;
+    ctx->env = fn->data.lambda.env;
+
+    for (size_t i = 0; i < argc; i++) {
+        define(ctx, fn->data.lambda.params[i], args[i]);
+    }
+
+    Lexer body_lex;
+    lexer_init(&body_lex, fn->data.lambda.body);
+    Parser body_parser;
+    body_parser.ctx = ctx;
+    body_parser.lex = &body_lex;
+
+    if (!lexer_next(&body_lex)) {
+        ctx->env = old_env;
+        return goon_nil(ctx);
+    }
+
+    Goon_Value *result = parse_expr(&body_parser);
+
+    ctx->env = old_env;
+    return result ? result : goon_nil(ctx);
+}
+
+static Goon_Value *builtin_map(Goon_Ctx *ctx, Goon_Value **args, size_t argc) {
+    if (argc != 2) return goon_nil(ctx);
+    Goon_Value *list = args[0];
+    Goon_Value *fn = args[1];
+
+    if (!list || list->type != GOON_LIST) return goon_nil(ctx);
+    if (!fn || (fn->type != GOON_LAMBDA && fn->type != GOON_BUILTIN)) return goon_nil(ctx);
+
+    Goon_Value *result = goon_list(ctx);
+
+    for (size_t i = 0; i < list->data.list.len; i++) {
+        Goon_Value *item = list->data.list.items[i];
+        Goon_Value *mapped;
+
+        if (fn->type == GOON_LAMBDA) {
+            Goon_Value *fn_args[1] = { item };
+            mapped = call_lambda(ctx, fn, fn_args, 1);
+        } else {
+            Goon_Value *fn_args[1] = { item };
+            mapped = fn->data.builtin(ctx, fn_args, 1);
+        }
+
+        goon_list_push(ctx, result, mapped);
+    }
+
+    return result;
+}
+
 static Goon_Value *interpolate_string(Goon_Ctx *ctx, const char *str) {
     size_t len = strlen(str);
     size_t buf_size = len * 2 + 1;
@@ -540,7 +705,7 @@ static Goon_Value *parse_record(Parser *p) {
         }
 
         if (p->lex->current.type != TOK_IDENT) {
-            p->lex->error = strdup("expected field name");
+            lexer_set_error(p->lex, "expected field name");
             return NULL;
         }
 
@@ -553,7 +718,7 @@ static Goon_Value *parse_record(Parser *p) {
         }
 
         if (p->lex->current.type != TOK_EQUALS) {
-            p->lex->error = strdup("expected = after field name");
+            lexer_set_error(p->lex, "expected = after field name");
             free(key);
             return NULL;
         }
@@ -574,7 +739,7 @@ static Goon_Value *parse_record(Parser *p) {
     }
 
     if (p->lex->current.type != TOK_RBRACE) {
-        p->lex->error = strdup("expected }");
+        lexer_set_error(p->lex, "expected }");
         return NULL;
     }
 
@@ -596,6 +761,25 @@ static Goon_Value *parse_list(Parser *p) {
                     goon_list_push(p->ctx, list, spread_val->data.list.items[i]);
                 }
             }
+        } else if (p->lex->current.type == TOK_INT) {
+            int64_t start = p->lex->current.data.integer;
+            if (!lexer_next(p->lex)) return NULL;
+
+            if (p->lex->current.type == TOK_DOTDOT) {
+                if (!lexer_next(p->lex)) return NULL;
+                if (p->lex->current.type != TOK_INT) {
+                    lexer_set_error(p->lex, "expected integer after ..");
+                    return NULL;
+                }
+                int64_t end = p->lex->current.data.integer;
+                if (!lexer_next(p->lex)) return NULL;
+
+                for (int64_t i = start; i <= end; i++) {
+                    goon_list_push(p->ctx, list, goon_int(p->ctx, i));
+                }
+            } else {
+                goon_list_push(p->ctx, list, goon_int(p->ctx, start));
+            }
         } else {
             Goon_Value *item = parse_expr(p);
             if (!item) return NULL;
@@ -608,7 +792,7 @@ static Goon_Value *parse_list(Parser *p) {
     }
 
     if (p->lex->current.type != TOK_RBRACKET) {
-        p->lex->error = strdup("expected ]");
+        lexer_set_error(p->lex, "expected ]");
         return NULL;
     }
 
@@ -620,14 +804,14 @@ static Goon_Value *parse_import(Parser *p) {
     if (!lexer_next(p->lex)) return NULL;
 
     if (p->lex->current.type != TOK_LPAREN) {
-        p->lex->error = strdup("expected ( after import");
+        lexer_set_error(p->lex,"expected ( after import");
         return NULL;
     }
 
     if (!lexer_next(p->lex)) return NULL;
 
     if (p->lex->current.type != TOK_STRING) {
-        p->lex->error = strdup("expected string path in import");
+        lexer_set_error(p->lex,"expected string path in import");
         return NULL;
     }
 
@@ -635,7 +819,7 @@ static Goon_Value *parse_import(Parser *p) {
     if (!lexer_next(p->lex)) { free(path); return NULL; }
 
     if (p->lex->current.type != TOK_RPAREN) {
-        p->lex->error = strdup("expected ) after import path");
+        lexer_set_error(p->lex,"expected ) after import path");
         free(path);
         return NULL;
     }
@@ -666,7 +850,7 @@ static Goon_Value *parse_import(Parser *p) {
 
     FILE *f = fopen(full_path, "r");
     if (!f) {
-        p->lex->error = strdup("could not open import file");
+        lexer_set_error(p->lex,"could not open import file");
         return NULL;
     }
 
@@ -729,7 +913,7 @@ static Goon_Value *parse_call(Parser *p, const char *name) {
     }
 
     if (p->lex->current.type != TOK_RPAREN) {
-        p->lex->error = strdup("expected )");
+        lexer_set_error(p->lex,"expected )");
         return NULL;
     }
 
@@ -737,6 +921,36 @@ static Goon_Value *parse_call(Parser *p, const char *name) {
 
     if (fn && fn->type == GOON_BUILTIN) {
         return fn->data.builtin(p->ctx, args, argc);
+    }
+
+    if (fn && fn->type == GOON_LAMBDA) {
+        if (argc != fn->data.lambda.param_count) {
+            lexer_set_error(p->lex, "wrong number of arguments");
+            return NULL;
+        }
+
+        Goon_Binding *old_env = p->ctx->env;
+        p->ctx->env = fn->data.lambda.env;
+
+        for (size_t i = 0; i < argc; i++) {
+            define(p->ctx, fn->data.lambda.params[i], args[i]);
+        }
+
+        Lexer body_lex;
+        lexer_init(&body_lex, fn->data.lambda.body);
+        Parser body_parser;
+        body_parser.ctx = p->ctx;
+        body_parser.lex = &body_lex;
+
+        if (!lexer_next(&body_lex)) {
+            p->ctx->env = old_env;
+            return NULL;
+        }
+
+        Goon_Value *result = parse_expr(&body_parser);
+
+        p->ctx->env = old_env;
+        return result ? result : goon_nil(p->ctx);
     }
 
     return goon_nil(p->ctx);
@@ -787,7 +1001,7 @@ static Goon_Value *parse_primary(Parser *p) {
                 while (p->lex->current.type == TOK_DOT) {
                     if (!lexer_next(p->lex)) return NULL;
                     if (p->lex->current.type != TOK_IDENT) {
-                        p->lex->error = strdup("expected field name after .");
+                        lexer_set_error(p->lex,"expected field name after .");
                         return NULL;
                     }
                     char *field = p->lex->current.data.string;
@@ -812,14 +1026,85 @@ static Goon_Value *parse_primary(Parser *p) {
             return parse_import(p);
 
         case TOK_LPAREN: {
-            if (!lexer_next(p->lex)) return NULL;
-            Goon_Value *val = parse_expr(p);
-            if (p->lex->current.type != TOK_RPAREN) {
-                p->lex->error = strdup("expected )");
-                return NULL;
+            Lexer_State saved;
+            lexer_save(p->lex, &saved);
+
+            if (!lexer_next(p->lex)) { lexer_state_free(&saved); return NULL; }
+
+            char *params[16];
+            size_t param_count = 0;
+            bool is_lambda = true;
+
+            if (p->lex->current.type == TOK_RPAREN) {
+                if (!lexer_next(p->lex)) { lexer_state_free(&saved); return NULL; }
+                is_lambda = (p->lex->current.type == TOK_ARROW);
+            } else if (p->lex->current.type == TOK_IDENT) {
+                while (is_lambda && param_count < 16) {
+                    if (p->lex->current.type != TOK_IDENT) {
+                        is_lambda = false;
+                        break;
+                    }
+                    params[param_count++] = strdup(p->lex->current.data.string);
+                    if (!lexer_next(p->lex)) {
+                        for (size_t i = 0; i < param_count; i++) free(params[i]);
+                        lexer_state_free(&saved);
+                        return NULL;
+                    }
+                    if (p->lex->current.type == TOK_COMMA) {
+                        if (!lexer_next(p->lex)) {
+                            for (size_t i = 0; i < param_count; i++) free(params[i]);
+                            lexer_state_free(&saved);
+                            return NULL;
+                        }
+                    } else if (p->lex->current.type == TOK_RPAREN) {
+                        if (!lexer_next(p->lex)) {
+                            for (size_t i = 0; i < param_count; i++) free(params[i]);
+                            lexer_state_free(&saved);
+                            return NULL;
+                        }
+                        is_lambda = (p->lex->current.type == TOK_ARROW);
+                        break;
+                    } else {
+                        is_lambda = false;
+                        break;
+                    }
+                }
+            } else {
+                is_lambda = false;
             }
-            if (!lexer_next(p->lex)) return NULL;
-            return val;
+
+            if (is_lambda) {
+                lexer_state_free(&saved);
+                if (!lexer_next(p->lex)) {
+                    for (size_t i = 0; i < param_count; i++) free(params[i]);
+                    return NULL;
+                }
+                size_t body_start = p->lex->token_start;
+                Goon_Value *body_val = parse_expr(p);
+                if (!body_val) {
+                    for (size_t i = 0; i < param_count; i++) free(params[i]);
+                    return NULL;
+                }
+                size_t body_end = p->lex->token_start;
+                char *body_src = strdup_range(p->lex->src + body_start, body_end - body_start);
+
+                Goon_Value *lambda = goon_lambda(p->ctx, params, param_count, body_src, p->ctx->env);
+                free(body_src);
+                for (size_t i = 0; i < param_count; i++) free(params[i]);
+                return lambda;
+            } else {
+                for (size_t i = 0; i < param_count; i++) free(params[i]);
+                lexer_restore(p->lex, &saved);
+
+                if (!lexer_next(p->lex)) return NULL;
+                Goon_Value *val = parse_expr(p);
+                if (p->lex->current.type != TOK_RPAREN) {
+                    lexer_set_error(p->lex, "expected )");
+                    return NULL;
+                }
+                if (!lexer_next(p->lex)) return NULL;
+                return val;
+            }
         }
 
         default:
@@ -832,7 +1117,7 @@ static Goon_Value *parse_expr(Parser *p) {
         if (!lexer_next(p->lex)) return NULL;
 
         if (p->lex->current.type != TOK_IDENT) {
-            p->lex->error = strdup("expected identifier after let");
+            lexer_set_error(p->lex,"expected identifier after let");
             return NULL;
         }
 
@@ -845,7 +1130,7 @@ static Goon_Value *parse_expr(Parser *p) {
         }
 
         if (p->lex->current.type != TOK_EQUALS) {
-            p->lex->error = strdup("expected = in let binding");
+            lexer_set_error(p->lex,"expected = in let binding");
             free(name);
             return NULL;
         }
@@ -858,9 +1143,11 @@ static Goon_Value *parse_expr(Parser *p) {
         define(p->ctx, name, value);
         free(name);
 
-        if (p->lex->current.type == TOK_SEMICOLON) {
-            if (!lexer_next(p->lex)) return NULL;
+        if (p->lex->current.type != TOK_SEMICOLON) {
+            lexer_set_error(p->lex, "expected ; after let binding");
+            return NULL;
         }
+        if (!lexer_next(p->lex)) return NULL;
 
         return value;
     }
@@ -872,7 +1159,7 @@ static Goon_Value *parse_expr(Parser *p) {
         if (!cond) return NULL;
 
         if (p->lex->current.type != TOK_THEN) {
-            p->lex->error = strdup("expected 'then' after if condition");
+            lexer_set_error(p->lex,"expected 'then' after if condition");
             return NULL;
         }
 
@@ -882,7 +1169,7 @@ static Goon_Value *parse_expr(Parser *p) {
         if (!then_val) return NULL;
 
         if (p->lex->current.type != TOK_ELSE) {
-            p->lex->error = strdup("expected 'else' after then branch");
+            lexer_set_error(p->lex,"expected 'else' after then branch");
             return NULL;
         }
 
@@ -904,7 +1191,7 @@ static Goon_Value *parse_expr(Parser *p) {
         if (!then_val) return NULL;
 
         if (p->lex->current.type != TOK_COLON) {
-            p->lex->error = strdup("expected : in ternary");
+            lexer_set_error(p->lex,"expected : in ternary");
             return NULL;
         }
 
@@ -919,15 +1206,37 @@ static Goon_Value *parse_expr(Parser *p) {
     return val;
 }
 
+static void clear_error(Goon_Ctx *ctx) {
+    if (ctx->error.message) { free(ctx->error.message); ctx->error.message = NULL; }
+    if (ctx->error.file) { free(ctx->error.file); ctx->error.file = NULL; }
+    if (ctx->error.source_line) { free(ctx->error.source_line); ctx->error.source_line = NULL; }
+    ctx->error.line = 0;
+    ctx->error.col = 0;
+}
+
+static char *get_source_line(const char *src, size_t line_start) {
+    const char *start = src + line_start;
+    const char *end = start;
+    while (*end && *end != '\n') end++;
+    return strdup_range(start, end - start);
+}
+
 Goon_Ctx *goon_create(void) {
     Goon_Ctx *ctx = malloc(sizeof(Goon_Ctx));
     if (!ctx) return NULL;
     ctx->env = NULL;
     ctx->values = NULL;
     ctx->fields = NULL;
-    ctx->error = NULL;
+    ctx->error.message = NULL;
+    ctx->error.file = NULL;
+    ctx->error.line = 0;
+    ctx->error.col = 0;
+    ctx->error.source_line = NULL;
     ctx->base_path = NULL;
     ctx->userdata = NULL;
+
+    goon_register(ctx, "map", builtin_map);
+
     return ctx;
 }
 
@@ -949,6 +1258,16 @@ void goon_destroy(Goon_Ctx *ctx) {
             free(v->data.string);
         } else if (v->type == GOON_LIST && v->data.list.items) {
             free(v->data.list.items);
+        } else if (v->type == GOON_LAMBDA) {
+            if (v->data.lambda.params) {
+                for (size_t i = 0; i < v->data.lambda.param_count; i++) {
+                    free(v->data.lambda.params[i]);
+                }
+                free(v->data.lambda.params);
+            }
+            if (v->data.lambda.body) {
+                free(v->data.lambda.body);
+            }
         }
         free(v);
         v = next;
@@ -962,7 +1281,7 @@ void goon_destroy(Goon_Ctx *ctx) {
         f = next;
     }
 
-    if (ctx->error) free(ctx->error);
+    clear_error(ctx);
     if (ctx->base_path) free(ctx->base_path);
     free(ctx);
 }
@@ -985,6 +1304,30 @@ void goon_register(Goon_Ctx *ctx, const char *name, Goon_Builtin_Fn fn) {
 
 static Goon_Value *last_result = NULL;
 
+static void set_error_from_lexer(Goon_Ctx *ctx, Lexer *lex, const char *source) {
+    clear_error(ctx);
+    if (lex->error) {
+        ctx->error.message = lex->error;
+        lex->error = NULL;
+    }
+    ctx->error.line = lex->error_line > 0 ? lex->error_line : lex->line;
+    ctx->error.col = lex->error_col > 0 ? lex->error_col : lex->col;
+    if (ctx->base_path) {
+        ctx->error.file = strdup(ctx->base_path);
+    }
+    size_t line_start = lex->line_start;
+    if (lex->error_line > 0 && lex->error_line < lex->line) {
+        const char *p = source;
+        size_t cur_line = 1;
+        while (*p && cur_line < lex->error_line) {
+            if (*p == '\n') cur_line++;
+            p++;
+        }
+        line_start = p - source;
+    }
+    ctx->error.source_line = get_source_line(source, line_start);
+}
+
 bool goon_load_string(Goon_Ctx *ctx, const char *source) {
     Lexer lex;
     lexer_init(&lex, source);
@@ -994,8 +1337,7 @@ bool goon_load_string(Goon_Ctx *ctx, const char *source) {
     parser.lex = &lex;
 
     if (!lexer_next(&lex)) {
-        if (ctx->error) free(ctx->error);
-        ctx->error = lex.error;
+        set_error_from_lexer(ctx, &lex, source);
         return false;
     }
 
@@ -1004,10 +1346,7 @@ bool goon_load_string(Goon_Ctx *ctx, const char *source) {
     while (lex.current.type != TOK_EOF) {
         Goon_Value *expr = parse_expr(&parser);
         if (!expr) {
-            if (lex.error) {
-                if (ctx->error) free(ctx->error);
-                ctx->error = lex.error;
-            }
+            set_error_from_lexer(ctx, &lex, source);
             return false;
         }
         last_result = expr;
@@ -1019,8 +1358,9 @@ bool goon_load_string(Goon_Ctx *ctx, const char *source) {
 bool goon_load_file(Goon_Ctx *ctx, const char *path) {
     FILE *f = fopen(path, "r");
     if (!f) {
-        if (ctx->error) free(ctx->error);
-        ctx->error = strdup("could not open file");
+        clear_error(ctx);
+        ctx->error.message = strdup("could not open file");
+        ctx->error.file = strdup(path);
         return false;
     }
 
@@ -1031,8 +1371,8 @@ bool goon_load_file(Goon_Ctx *ctx, const char *path) {
     char *source = malloc(size + 1);
     if (!source) {
         fclose(f);
-        if (ctx->error) free(ctx->error);
-        ctx->error = strdup("out of memory");
+        clear_error(ctx);
+        ctx->error.message = strdup("out of memory");
         return false;
     }
 
@@ -1048,7 +1388,34 @@ bool goon_load_file(Goon_Ctx *ctx, const char *path) {
 }
 
 const char *goon_get_error(Goon_Ctx *ctx) {
-    return ctx->error;
+    return ctx->error.message;
+}
+
+const Goon_Error *goon_get_error_info(Goon_Ctx *ctx) {
+    if (!ctx->error.message) return NULL;
+    return &ctx->error;
+}
+
+void goon_error_print(const Goon_Error *err) {
+    if (!err || !err->message) return;
+
+    fprintf(stderr, "error: %s\n", err->message);
+
+    if (err->file && err->line > 0) {
+        fprintf(stderr, "  --> %s:%zu:%zu\n", err->file, err->line, err->col);
+    } else if (err->line > 0) {
+        fprintf(stderr, "  --> %zu:%zu\n", err->line, err->col);
+    }
+
+    if (err->source_line) {
+        fprintf(stderr, "   |\n");
+        fprintf(stderr, "%3zu| %s\n", err->line, err->source_line);
+        fprintf(stderr, "   |");
+        for (size_t i = 0; i < err->col; i++) {
+            fprintf(stderr, " ");
+        }
+        fprintf(stderr, "^\n");
+    }
 }
 
 Goon_Value *goon_eval_result(Goon_Ctx *ctx) {

@@ -15,11 +15,13 @@ typedef enum {
     GOON_LIST,
     GOON_RECORD,
     GOON_BUILTIN,
+    GOON_LAMBDA,
 } Goon_Type;
 
 typedef struct Goon_Value Goon_Value;
 typedef struct Goon_Ctx Goon_Ctx;
 typedef struct Goon_Record_Field Goon_Record_Field;
+typedef struct Goon_Binding Goon_Binding;
 
 typedef Goon_Value *(*Goon_Builtin_Fn)(Goon_Ctx *ctx, Goon_Value **args, size_t argc);
 
@@ -45,6 +47,12 @@ struct Goon_Value {
             Goon_Record_Field *fields;
         } record;
         Goon_Builtin_Fn builtin;
+        struct {
+            char **params;
+            size_t param_count;
+            char *body;
+            Goon_Binding *env;
+        } lambda;
     } data;
 };
 
@@ -54,11 +62,19 @@ typedef struct Goon_Binding {
     struct Goon_Binding *next;
 } Goon_Binding;
 
+typedef struct {
+    char *message;
+    char *file;
+    size_t line;
+    size_t col;
+    char *source_line;
+} Goon_Error;
+
 struct Goon_Ctx {
     Goon_Binding *env;
     Goon_Value *values;
     Goon_Record_Field *fields;
-    char *error;
+    Goon_Error error;
     char *base_path;
     void *userdata;
 };
@@ -75,6 +91,8 @@ bool goon_load_file(Goon_Ctx *ctx, const char *path);
 bool goon_load_string(Goon_Ctx *ctx, const char *source);
 
 const char *goon_get_error(Goon_Ctx *ctx);
+const Goon_Error *goon_get_error_info(Goon_Ctx *ctx);
+void goon_error_print(const Goon_Error *err);
 
 Goon_Value *goon_nil(Goon_Ctx *ctx);
 Goon_Value *goon_bool(Goon_Ctx *ctx, bool val);
