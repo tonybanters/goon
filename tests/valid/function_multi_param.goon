@@ -1,0 +1,2 @@
+let f = (a, b, c) => { x = a; y = b; z = c; };
+{ result = f(1, 2, 3); }

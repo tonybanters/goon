@@ -1,0 +1,3 @@
+// line comment
+let x = 1; /* block comment */
+{ value = x; /* inline */ }

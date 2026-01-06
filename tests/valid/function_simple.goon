@@ -1,0 +1,2 @@
+let f = (x) => { value = x; };
+{ result = f(42); }

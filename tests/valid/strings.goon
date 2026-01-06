@@ -1,0 +1,1 @@
+{ a = "hello"; b = "line\nbreak"; c = "tab\there"; d = "quote\"test"; }

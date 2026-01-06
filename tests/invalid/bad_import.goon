@@ -1,0 +1,2 @@
+let x = import("./nonexistent.goon");
+{ value = x; }

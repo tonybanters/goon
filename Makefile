@@ -22,8 +22,7 @@ uninstall:
 clean:
 	rm -f goon $(OBJ)
 
-test: goon
-	@echo "Running tests..."
+check: goon
 	@./tests/run_tests.sh
 
-.PHONY: all debug install uninstall clean test
+.PHONY: all debug install uninstall clean check
