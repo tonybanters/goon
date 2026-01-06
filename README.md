@@ -4,7 +4,7 @@ A 1k line embeddable configuration language with Nix-like syntax.
 
 ## Example
 
-```goon
+```nix
 let name = "goon";
 let version = 1;
 
