@@ -1,0 +1,13 @@
+let name = "goon";
+let version = 1;
+
+{
+    name = name;
+    version = version;
+    enabled = true;
+    tags = ["web", "cli", "config"];
+    nested = {
+        foo = 42;
+        bar = "hello";
+    };
+}
