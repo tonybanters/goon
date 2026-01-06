@@ -1,0 +1,31 @@
+// Arrow functions as config templates
+
+// Simple template
+let color = (hex) => { hex = hex; };
+
+// Multi-parameter template
+let keybind = (mods, key, cmd) => {
+    mods = mods;
+    key = key;
+    cmd = cmd;
+};
+
+// Nested template
+let workspace_key = (n) => keybind("super", n, "workspace ${n}");
+
+{
+    colors = {
+        red = color("#ff0000");
+        green = color("#00ff00");
+        blue = color("#0000ff");
+    };
+
+    keys = [
+        keybind("super", "return", "terminal"),
+        keybind("super", "d", "launcher"),
+        keybind(["super", "shift"], "q", "kill"),
+        workspace_key(1),
+        workspace_key(2),
+        workspace_key(3),
+    ];
+}

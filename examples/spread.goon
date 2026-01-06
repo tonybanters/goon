@@ -1,0 +1,17 @@
+// Spread operator for merging records and lists
+
+let defaults = {
+    gap = 10;
+    border = 2;
+    focus_color = "#ff0000";
+};
+
+let base_tags = ["web", "dev", "music"];
+
+{
+    // Spread record - override gap
+    config = { ...defaults; gap = 20; };
+
+    // Spread list - add more tags
+    tags = [...base_tags, "chat", "games"];
+}

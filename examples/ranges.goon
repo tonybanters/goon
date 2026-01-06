@@ -1,0 +1,19 @@
+// Ranges and map function
+
+let workspaces = [1..9];
+
+let make_ws = (n) => {
+    id = n;
+    name = "workspace ${n}";
+};
+
+{
+    // Simple range
+    numbers = [1..5];
+
+    // Range with map
+    workspace_configs = map(workspaces, make_ws);
+
+    // Inline map with range
+    doubled = map([1..10], (n) => { original = n; value = n; });
+}

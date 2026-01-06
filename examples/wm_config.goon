@@ -1,0 +1,64 @@
+// Full window manager config showcasing all goon features
+
+// Templates
+let key = (mods, key, cmd) => { mods = mods; key = key; cmd = cmd; };
+let ws_key = (n) => key("super", n, "workspace ${n}");
+let ws_move = (n) => key(["super", "shift"], n, "move-to-workspace ${n}");
+
+// Theme
+let colors = {
+    bg = "#1a1a2e";
+    fg = "#eaeaea";
+    accent = "#e94560";
+    border_focus = "#e94560";
+    border_normal = "#333333";
+};
+
+// Layout defaults
+let defaults = {
+    gap = 10;
+    border_width = 2;
+    smart_gaps = true;
+};
+
+// Apps
+let terminal = "alacritty";
+let launcher = "rofi -show drun";
+let browser = "firefox";
+
+{
+    // Spread defaults and override
+    ...defaults;
+    gap = 8;
+
+    colors = colors;
+
+    keybinds = [
+        // App launchers
+        key("super", "return", terminal),
+        key("super", "d", launcher),
+        key("super", "b", browser),
+
+        // Window management
+        key("super", "q", "kill"),
+        key("super", "f", "fullscreen"),
+        key("super", "space", "float"),
+
+        // Workspace switching (1-9)
+        ...map([1..9], ws_key),
+
+        // Move to workspace (1-9)
+        ...map([1..9], ws_move),
+    ];
+
+    workspaces = map([1..9], (n) => {
+        id = n;
+        name = if n then "workspace ${n}" else "default";
+    });
+
+    rules = [
+        { class = "Firefox"; workspace = 2; },
+        { class = "Spotify"; workspace = 9; floating = true; },
+        { class = "Steam"; workspace = 8; },
+    ];
+}

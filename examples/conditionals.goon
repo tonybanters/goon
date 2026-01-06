@@ -1,0 +1,15 @@
+// Conditional expressions
+
+let debug = true;
+let theme = "dark";
+
+{
+    // If-then-else
+    log_level = if debug then "verbose" else "error";
+
+    // Ternary operator
+    background = theme ? "#1a1a1a" : "#ffffff";
+
+    // Nested conditional
+    border_width = if debug then 4 else if theme then 2 else 1;
+}

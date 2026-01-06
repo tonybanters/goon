@@ -1,0 +1,14 @@
+// String interpolation
+
+let app_name = "goon";
+let version = 1;
+let author = "tony";
+
+{
+    title = "${app_name} v${version}";
+    credit = "Created by ${author}";
+    path = "/home/${author}/.config/${app_name}";
+
+    // Escaping $ with \$
+    template = "Use \${var} for interpolation";
+}
