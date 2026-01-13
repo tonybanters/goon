@@ -1,3 +1,4 @@
 goon
 *.o
 notes/
+compile_commands.json
