@@ -1,0 +1,7 @@
+{
+    foo.bar.baz = 42;
+    foo.bar.qux = "hello";
+    foo.enabled = true;
+    services.nginx.port = 80;
+    services.redis.port = 6379;
+}

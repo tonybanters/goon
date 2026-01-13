@@ -1,0 +1,1 @@
+{"services":{"redis":{"port":6379},"nginx":{"port":80}},"foo":{"enabled":true,"bar":{"qux":"hello","baz":42}}}

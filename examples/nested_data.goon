@@ -1,0 +1,16 @@
+{
+    colors.bg = "#1a1a2e";
+    colors.fg = "#eaeaea";
+    colors.border.focused = "#e94560";
+    colors.border.unfocused = "#333333";
+    colors.border.urgent = "#ff0000";
+
+    layout.gaps.inner = 8;
+    layout.gaps.outer = 4;
+    layout.border_width = 2;
+
+    bar.position = "top";
+    bar.height = 24;
+    bar.font.family = "JetBrains Mono";
+    bar.font.size = 10;
+}
